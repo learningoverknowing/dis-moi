@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#f4f1ea">
+<title>dis-moi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #f4f1ea; color: #1a1a17; font-family: 'Fraunces', Georgia, serif; }
+  textarea:focus, button:focus { outline: none; }
+  button { font-family: inherit; }
+  .chip:hover { background: #1a1a17 !important; color: #f4f1ea !important; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const ink = "#1a1a17";
+const paper = "#f4f1ea";
+const rouge = "#c0392b";
+const gold = "#b8860b";
+const soft = "#6b6a63";
+
+const SAMPLE = [
+  "ask the guys next to me for a cigarette, politely",
+  "order a double espresso with ice",
+  "tell the boulanger I want a half baguette, not too cooked",
+  "ask my landlord what the note on my door means",
+  "say I'm just looking, to a shop assistant",
+];
+
+async function callModel(situation) {
+  const system = `You are a Parisian friend helping someone say exactly what they mean, the way locals actually speak. Given a situation in English, respond with ONLY valid JSON, no markdown, no preamble, in this exact shape:
+{
+  "situation": "short restatement",
+  "phrase": "the natural French phrase",
+  "literal": "rough word-for-word English so they feel the structure",
+  "breakdown": [{"fr":"word/chunk","en":"meaning","note":"short tip, politeness/pronunciation, or empty"}],
+  "variations": [{"label":"Casual|Quick|Extra polite","phrase":"...","when":"when to use it"}],
+  "responses": [{"fr":"likely reply","en":"what it means"}]
+}
+Keep it real, current, Parisian. Politeness matters: greet first, use conditional, vouvoiement with strangers.`;
+
+  const res = await fetch("https://dis-moi-api.learningoverknowing.workers.dev", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system, situation }),
+  });
+  if (!res.ok) throw new Error("API not reachable — worker may not be deployed yet.");
+  const data = await res.json();
+  const raw = (data.text || data.content || "").replace(/```json|```/g, "").trim();
+  return JSON.parse(raw);
+}
+
+function App() {
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState(null);
+  const [voice, setVoice] = useState(null);
+
+  useEffect(() => {
+    const pick = () => {
+      const voices = window.speechSynthesis?.getVoices() || [];
+      const fr = voices.find(v => v.lang?.startsWith("fr"));
+      if (fr) setVoice(fr);
+    };
+    pick();
+    if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = pick;
+  }, []);
+
+  const say = (text) => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "fr-FR";
+    if (voice) u.voice = voice;
+    u.rate = 0.9;
+    window.speechSynthesis.speak(u);
+  };
+
+  async function go(situation) {
+    const s = (situation ?? input).trim();
+    if (!s) return;
+    setLoading(true);
+    setError("");
+    setResult(null);
+    try {
+      const r = await callModel(s);
+      setResult(r);
+    } catch (e) {
+      setError(e.message || "Something broke.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 640, margin: "0 auto", padding: "32px 20px 60px", minHeight: "100vh" }}>
+
+      <header style={{ textAlign: "center", marginBottom: 28 }}>
+        <h1 style={{ fontSize: 38, fontWeight: 600, fontStyle: "italic", letterSpacing: "-0.02em" }}>dis-moi</h1>
+        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: soft, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.15em" }}>
+          your moment, in real French
+        </p>
+      </header>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+        <textarea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) go(); }}
+          placeholder="What are you about to say? In English. e.g. 'ask the guy next to me for a cigarette, politely'"
+          style={{ flex: 1, padding: "14px 16px", fontSize: 16, fontFamily: "'Fraunces', serif", border: `1.5px solid ${ink}`, borderRadius: 2, background: "transparent", resize: "none", color: ink }}
+          rows={2}
+        />
+        <button
+          onClick={() => go()}
+          disabled={loading}
+          style={{ width: 54, fontSize: 22, background: ink, color: paper, border: "none", borderRadius: 2, cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1 }}
+        >
+          {loading ? "…" : "→"}
+        </button>
+      </div>
+
+      {!result && !loading && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
+          {SAMPLE.map(s => (
+            <button key={s} className="chip" onClick={() => { setInput(s); go(s); }}
+              style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, padding: "7px 11px", border: `1px solid ${soft}`, borderRadius: 2, background: "transparent", color: soft, cursor: "pointer", transition: "all 0.15s" }}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <div style={{ marginTop: 20, padding: 14, border: `1px solid ${rouge}`, color: rouge, fontFamily: "'DM Mono', monospace", fontSize: 13, borderRadius: 2 }}>
+          {error}
+        </div>
+      )}
+
+      {result && (
+        <div style={{ marginTop: 24 }}>
+
+          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", color: soft, marginBottom: 10 }}>
+            {result.situation}
+          </div>
+
+          <div style={{ borderLeft: `3px solid ${rouge}`, paddingLeft: 16, marginBottom: 28 }}>
+            <p style={{ fontSize: 26, lineHeight: 1.3, margin: "0 0 10px", fontWeight: 600 }}>{result.phrase}</p>
+            <button onClick={() => say(result.phrase)}
+              style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, background: "transparent", border: `1px solid ${rouge}`, color: rouge, padding: "5px 12px", borderRadius: 2, cursor: "pointer" }}>
+              ◍ écouter
+            </button>
+            {result.literal && (
+              <p style={{ fontStyle: "italic", color: soft, fontSize: 15, margin: "12px 0 0" }}>{result.literal}</p>
+            )}
+          </div>
+
+          {result.breakdown?.length > 0 && (
+            <section style={{ marginBottom: 26 }}>
+              <h3 style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", color: gold, borderBottom: `1px solid ${gold}33`, paddingBottom: 6, marginBottom: 12 }}>
+                piece by piece
+              </h3>
+              {result.breakdown.map((b, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 9, paddingBottom: 9, borderBottom: `1px solid ${ink}11` }}>
+                  <button onClick={() => say(b.fr)}
+                    style={{ fontSize: 17, fontWeight: 600, color: ink, background: "transparent", border: "none", borderBottom: `1px dotted ${rouge}`, cursor: "pointer", padding: 0, fontFamily: "'Fraunces', serif" }}>
+                    {b.fr}
+                  </button>
+                  <span style={{ fontSize: 15, color: soft }}>{b.en}</span>
+                  {b.note && <span style={{ fontSize: 13, color: gold, fontStyle: "italic", flexBasis: "100%" }}>{b.note}</span>}
+                </div>
+              ))}
+            </section>
+          )}
+
+          {result.variations?.length > 0 && (
+            <section style={{ marginBottom: 26 }}>
+              <h3 style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", color: gold, borderBottom: `1px solid ${gold}33`, paddingBottom: 6, marginBottom: 12 }}>
+                other ways
+              </h3>
+              {result.variations.map((v, i) => (
+                <div key={i} style={{ marginBottom: 14 }}>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", background: ink, color: paper, padding: "2px 7px", borderRadius: 2, marginRight: 8 }}>
+                    {v.label}
+                  </span>
+                  <button onClick={() => say(v.phrase)}
+                    style={{ fontSize: 16, color: ink, background: "transparent", border: "none", borderBottom: `1px dotted ${soft}`, cursor: "pointer", padding: 0, fontFamily: "'Fraunces', serif" }}>
+                    {v.phrase}
+                  </button>
+                  <span style={{ display: "block", fontSize: 13, color: soft, marginTop: 4, fontStyle: "italic" }}>{v.when}</span>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {result.responses?.length > 0 && (
+            <section style={{ marginBottom: 26 }}>
+              <h3 style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", color: gold, borderBottom: `1px solid ${gold}33`, paddingBottom: 6, marginBottom: 12 }}>
+                what they might say back
+              </h3>
+              {result.responses.map((r, i) => (
+                <div key={i} style={{ marginBottom: 12 }}>
+                  <button onClick={() => say(r.fr)}
+                    style={{ fontSize: 16, color: ink, background: "transparent", border: "none", borderBottom: `1px dotted ${rouge}`, cursor: "pointer", padding: 0, fontFamily: "'Fraunces', serif" }}>
+                    {r.fr}
+                  </button>
+                  <span style={{ display: "block", fontSize: 14, color: soft, marginTop: 3 }}>{r.en}</span>
+                </div>
+              ))}
+            </section>
+          )}
+
+          <button
+            onClick={() => { setResult(null); setInput(""); }}
+            style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, background: "transparent", border: `1px solid ${soft}`, color: soft, padding: "8px 16px", borderRadius: 2, cursor: "pointer", marginTop: 8 }}>
+            ← new situation
+          </button>
+
+        </div>
+      )}
+
+      <footer style={{ textAlign: "center", fontFamily: "'DM Mono', monospace", fontSize: 11, color: soft, marginTop: 40, letterSpacing: "0.1em" }}>
+        tap any French to hear it
+      </footer>
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

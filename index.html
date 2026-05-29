@@ -17,6 +17,7 @@
   textarea:focus, button:focus { outline: none; }
   button { font-family: inherit; }
   .chip:hover { background: #1a1a17 !important; color: #f4f1ea !important; }
+  .speak-btn:hover { background: rgba(192,57,43,0.08) !important; }
 </style>
 </head>
 <body>
@@ -30,33 +31,46 @@ const paper = "#f4f1ea";
 const rouge = "#c0392b";
 const gold = "#b8860b";
 const soft = "#6b6a63";
+const softBorder = "rgba(107,106,99,0.2)";
 
-const SAMPLE = [
-  "ask the guys next to me for a cigarette, politely",
-  "order a double espresso with ice",
-  "tell the boulanger I want a half baguette, not too cooked",
-  "ask my landlord what the note on my door means",
-  "say I'm just looking, to a shop assistant",
+const SAMPLES = [
+  "pharmacy — want Vitamin C serum and sunscreen, budget around €20",
+  "boulangerie — half baguette, not too cooked, ask if they have pain au levain",
+  "café — double espresso with ice, and tap water, not sparkling",
+  "market — buying vegetables, want to ask what's freshest today",
+  "supermarket — looking for laundry detergent and fabric softener",
+  "restaurant — ask to move to a quieter table, politely",
 ];
 
-async function callModel(situation) {
-  const system = `You are a Parisian friend helping someone say exactly what they mean, the way locals actually speak. Given a situation in English, respond with ONLY valid JSON, no markdown, no preamble, in this exact shape:
-{
-  "situation": "short restatement",
-  "phrase": "the natural French phrase",
-  "literal": "rough word-for-word English so they feel the structure",
-  "breakdown": [{"fr":"word/chunk","en":"meaning","note":"short tip, politeness/pronunciation, or empty"}],
-  "variations": [{"label":"Casual|Quick|Extra polite","phrase":"...","when":"when to use it"}],
-  "responses": [{"fr":"likely reply","en":"what it means"}]
-}
-Keep it real, current, Parisian. Politeness matters: greet first, use conditional, vouvoiement with strangers.`;
+const SYSTEM = `You are a Parisian friend giving someone a situational briefing before they walk into a real French environment. They tell you where they're going and what they need. Your job is to equip them — not hand them a script, but prepare them to navigate the situation themselves with confidence.
 
+Given their situation, respond with ONLY valid JSON, no markdown, no preamble:
+
+{
+  "situation": "one-line restatement of what they're doing",
+  "briefing": "the single most important thing to know going in — cultural, practical, or linguistic. One sentence, sharp.",
+  "phrases": [
+    {"fr": "natural French phrase", "en": "what it means in English", "when": "the exact moment to use this"}
+  ],
+  "vocabulary": [
+    {"fr": "word or label they will see or hear", "en": "what it means", "tip": "short useful note, or empty string"}
+  ],
+  "they_might_say": [
+    {"fr": "what someone will likely say to them", "en": "what it means", "reply": "how to respond in French"}
+  ],
+  "look_for": ["practical tip 1", "practical tip 2"],
+  "budget_note": "brief note on pricing or value for their budget — empty string if not relevant"
+}
+
+Rules: 3-4 phrases max. 4-6 vocabulary items. 2-3 things they might hear. 2-3 look_for tips. Keep it real and current. Parisian friend energy: warm, direct, no fluff. Politeness matters — greet first, use conditional, vouvoiement with strangers.`;
+
+async function callModel(situation) {
   const res = await fetch("https://dis-moi-api.learningoverknowing.workers.dev", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system, situation }),
+    body: JSON.stringify({ system: SYSTEM, situation }),
   });
-  if (!res.ok) throw new Error("API not reachable — worker may not be deployed yet.");
+  if (!res.ok) throw new Error("API not reachable — check that dis-moi-api worker is deployed.");
   const data = await res.json();
   const raw = (data.text || data.content || "").replace(/```json|```/g, "").trim();
   return JSON.parse(raw);
@@ -85,7 +99,7 @@ function App() {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "fr-FR";
     if (voice) u.voice = voice;
-    u.rate = 0.9;
+    u.rate = 0.88;
     window.speechSynthesis.speak(u);
   };
 
@@ -105,39 +119,52 @@ function App() {
     }
   }
 
-  return (
-    <div style={{ maxWidth: 640, margin: "0 auto", padding: "32px 20px 60px", minHeight: "100vh" }}>
+  const SectionHead = ({ label }) => (
+    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.15em", color: gold, borderBottom: `1px solid ${gold}33`, paddingBottom: 6, marginBottom: 14 }}>
+      {label}
+    </div>
+  );
 
-      <header style={{ textAlign: "center", marginBottom: 28 }}>
-        <h1 style={{ fontSize: 38, fontWeight: 600, fontStyle: "italic", letterSpacing: "-0.02em" }}>dis-moi</h1>
-        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: soft, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.15em" }}>
-          your moment, in real French
+  const SpeakBtn = ({ text }) => (
+    <button className="speak-btn" onClick={() => say(text)}
+      style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, background: "transparent", border: `1px solid ${rouge}44`, color: rouge, padding: "3px 9px", borderRadius: 2, cursor: "pointer", marginLeft: 8, verticalAlign: "middle", transition: "background 0.15s" }}>
+      ◍
+    </button>
+  );
+
+  return (
+    <div style={{ maxWidth: 620, margin: "0 auto", padding: "36px 20px 72px" }}>
+
+      {/* Header */}
+      <header style={{ marginBottom: 32 }}>
+        <h1 style={{ fontSize: 36, fontWeight: 600, fontStyle: "italic", letterSpacing: "-0.02em", marginBottom: 4 }}>dis-moi</h1>
+        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: soft, textTransform: "uppercase", letterSpacing: "0.15em" }}>
+          describe your situation. walk in ready.
         </p>
       </header>
 
-      <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+      {/* Input */}
+      <div style={{ display: "flex", gap: 8, alignItems: "stretch", marginBottom: 16 }}>
         <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) go(); }}
-          placeholder="What are you about to say? In English. e.g. 'ask the guy next to me for a cigarette, politely'"
-          style={{ flex: 1, padding: "14px 16px", fontSize: 16, fontFamily: "'Fraunces', serif", border: `1.5px solid ${ink}`, borderRadius: 2, background: "transparent", resize: "none", color: ink }}
+          placeholder="Where are you going and what do you need? e.g. 'pharmacy — want sunscreen and Vitamin C, budget €20'"
+          style={{ flex: 1, padding: "14px 16px", fontSize: 15, fontFamily: "'Fraunces', serif", border: `1.5px solid ${ink}`, borderRadius: 2, background: "transparent", resize: "none", color: ink, lineHeight: 1.5 }}
           rows={2}
         />
-        <button
-          onClick={() => go()}
-          disabled={loading}
-          style={{ width: 54, fontSize: 22, background: ink, color: paper, border: "none", borderRadius: 2, cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1 }}
-        >
+        <button onClick={() => go()} disabled={loading}
+          style={{ width: 54, fontSize: 22, background: ink, color: paper, border: "none", borderRadius: 2, cursor: loading ? "default" : "pointer", opacity: loading ? 0.5 : 1, flexShrink: 0 }}>
           {loading ? "…" : "→"}
         </button>
       </div>
 
+      {/* Samples */}
       {!result && !loading && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
-          {SAMPLE.map(s => (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 32 }}>
+          {SAMPLES.map(s => (
             <button key={s} className="chip" onClick={() => { setInput(s); go(s); }}
-              style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, padding: "7px 11px", border: `1px solid ${soft}`, borderRadius: 2, background: "transparent", color: soft, cursor: "pointer", transition: "all 0.15s" }}>
+              style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, padding: "7px 12px", border: `1px solid ${soft}66`, borderRadius: 2, background: "transparent", color: soft, cursor: "pointer", transition: "all 0.15s" }}>
               {s}
             </button>
           ))}
@@ -145,94 +172,117 @@ function App() {
       )}
 
       {error && (
-        <div style={{ marginTop: 20, padding: 14, border: `1px solid ${rouge}`, color: rouge, fontFamily: "'DM Mono', monospace", fontSize: 13, borderRadius: 2 }}>
+        <div style={{ padding: 14, border: `1px solid ${rouge}`, color: rouge, fontFamily: "'DM Mono', monospace", fontSize: 13, borderRadius: 2, marginBottom: 20 }}>
           {error}
         </div>
       )}
 
+      {/* Result */}
       {result && (
-        <div style={{ marginTop: 24 }}>
-
-          <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", color: soft, marginBottom: 10 }}>
-            {result.situation}
+        <div>
+          {/* Situation + Briefing */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.15em", color: soft, marginBottom: 8 }}>
+              {result.situation}
+            </div>
+            <div style={{ borderLeft: `3px solid ${rouge}`, paddingLeft: 16 }}>
+              <p style={{ fontSize: 18, lineHeight: 1.45, fontWeight: 600, fontStyle: "italic" }}>{result.briefing}</p>
+            </div>
           </div>
 
-          <div style={{ borderLeft: `3px solid ${rouge}`, paddingLeft: 16, marginBottom: 28 }}>
-            <p style={{ fontSize: 26, lineHeight: 1.3, margin: "0 0 10px", fontWeight: 600 }}>{result.phrase}</p>
-            <button onClick={() => say(result.phrase)}
-              style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, background: "transparent", border: `1px solid ${rouge}`, color: rouge, padding: "5px 12px", borderRadius: 2, cursor: "pointer" }}>
-              ◍ écouter
-            </button>
-            {result.literal && (
-              <p style={{ fontStyle: "italic", color: soft, fontSize: 15, margin: "12px 0 0" }}>{result.literal}</p>
-            )}
-          </div>
-
-          {result.breakdown?.length > 0 && (
-            <section style={{ marginBottom: 26 }}>
-              <h3 style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", color: gold, borderBottom: `1px solid ${gold}33`, paddingBottom: 6, marginBottom: 12 }}>
-                piece by piece
-              </h3>
-              {result.breakdown.map((b, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 9, paddingBottom: 9, borderBottom: `1px solid ${ink}11` }}>
-                  <button onClick={() => say(b.fr)}
-                    style={{ fontSize: 17, fontWeight: 600, color: ink, background: "transparent", border: "none", borderBottom: `1px dotted ${rouge}`, cursor: "pointer", padding: 0, fontFamily: "'Fraunces', serif" }}>
-                    {b.fr}
-                  </button>
-                  <span style={{ fontSize: 15, color: soft }}>{b.en}</span>
-                  {b.note && <span style={{ fontSize: 13, color: gold, fontStyle: "italic", flexBasis: "100%" }}>{b.note}</span>}
+          {/* Phrases */}
+          {result.phrases?.length > 0 && (
+            <section style={{ marginBottom: 28 }}>
+              <SectionHead label="what to say" />
+              {result.phrases.map((p, i) => (
+                <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: `1px solid ${ink}0d` }}>
+                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4, marginBottom: 4 }}>
+                    <span style={{ fontSize: 19, fontWeight: 600 }}>{p.fr}</span>
+                    <SpeakBtn text={p.fr} />
+                  </div>
+                  <div style={{ fontSize: 14, color: soft, fontStyle: "italic", marginBottom: 4 }}>{p.en}</div>
+                  {p.when && <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: gold }}>{p.when}</div>}
                 </div>
               ))}
             </section>
           )}
 
-          {result.variations?.length > 0 && (
-            <section style={{ marginBottom: 26 }}>
-              <h3 style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", color: gold, borderBottom: `1px solid ${gold}33`, paddingBottom: 6, marginBottom: 12 }}>
-                other ways
-              </h3>
-              {result.variations.map((v, i) => (
-                <div key={i} style={{ marginBottom: 14 }}>
-                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", background: ink, color: paper, padding: "2px 7px", borderRadius: 2, marginRight: 8 }}>
-                    {v.label}
-                  </span>
-                  <button onClick={() => say(v.phrase)}
-                    style={{ fontSize: 16, color: ink, background: "transparent", border: "none", borderBottom: `1px dotted ${soft}`, cursor: "pointer", padding: 0, fontFamily: "'Fraunces', serif" }}>
-                    {v.phrase}
-                  </button>
-                  <span style={{ display: "block", fontSize: 13, color: soft, marginTop: 4, fontStyle: "italic" }}>{v.when}</span>
+          {/* Vocabulary */}
+          {result.vocabulary?.length > 0 && (
+            <section style={{ marginBottom: 28 }}>
+              <SectionHead label="words you'll see or hear" />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 20px" }}>
+                {result.vocabulary.map((v, i) => (
+                  <div key={i}>
+                    <button onClick={() => say(v.fr)}
+                      style={{ fontSize: 15, fontWeight: 600, color: ink, background: "transparent", border: "none", borderBottom: `1px dotted ${rouge}`, cursor: "pointer", padding: 0, fontFamily: "'Fraunces', serif", marginBottom: 2 }}>
+                      {v.fr}
+                    </button>
+                    <div style={{ fontSize: 13, color: soft }}>{v.en}</div>
+                    {v.tip && <div style={{ fontSize: 11, color: gold, fontStyle: "italic", marginTop: 2 }}>{v.tip}</div>}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* What they might say */}
+          {result.they_might_say?.length > 0 && (
+            <section style={{ marginBottom: 28 }}>
+              <SectionHead label="what they'll say to you" />
+              {result.they_might_say.map((t, i) => (
+                <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: `1px solid ${ink}0d` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
+                    <span style={{ fontSize: 16, fontWeight: 600 }}>{t.fr}</span>
+                    <SpeakBtn text={t.fr} />
+                  </div>
+                  <div style={{ fontSize: 13, color: soft, fontStyle: "italic", marginBottom: 4 }}>{t.en}</div>
+                  {t.reply && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: soft, marginRight: 4 }}>you say</span>
+                      <button onClick={() => say(t.reply)}
+                        style={{ fontSize: 14, color: ink, background: "transparent", border: "none", borderBottom: `1px dotted ${soft}`, cursor: "pointer", padding: 0, fontFamily: "'Fraunces', serif" }}>
+                        {t.reply}
+                      </button>
+                      <SpeakBtn text={t.reply} />
+                    </div>
+                  )}
                 </div>
               ))}
             </section>
           )}
 
-          {result.responses?.length > 0 && (
-            <section style={{ marginBottom: 26 }}>
-              <h3 style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", color: gold, borderBottom: `1px solid ${gold}33`, paddingBottom: 6, marginBottom: 12 }}>
-                what they might say back
-              </h3>
-              {result.responses.map((r, i) => (
-                <div key={i} style={{ marginBottom: 12 }}>
-                  <button onClick={() => say(r.fr)}
-                    style={{ fontSize: 16, color: ink, background: "transparent", border: "none", borderBottom: `1px dotted ${rouge}`, cursor: "pointer", padding: 0, fontFamily: "'Fraunces', serif" }}>
-                    {r.fr}
-                  </button>
-                  <span style={{ display: "block", fontSize: 14, color: soft, marginTop: 3 }}>{r.en}</span>
-                </div>
-              ))}
+          {/* Look for */}
+          {result.look_for?.length > 0 && (
+            <section style={{ marginBottom: 28 }}>
+              <SectionHead label="things to know going in" />
+              <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+                {result.look_for.map((tip, i) => (
+                  <li key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ color: rouge, marginTop: 1 }}>—</span>
+                    <span style={{ fontSize: 14, color: ink, lineHeight: 1.5 }}>{tip}</span>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 
-          <button
-            onClick={() => { setResult(null); setInput(""); }}
-            style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, background: "transparent", border: `1px solid ${soft}`, color: soft, padding: "8px 16px", borderRadius: 2, cursor: "pointer", marginTop: 8 }}>
+          {/* Budget note */}
+          {result.budget_note && (
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: soft, fontStyle: "italic", borderTop: `1px solid ${softBorder}`, paddingTop: 16, marginBottom: 28 }}>
+              {result.budget_note}
+            </div>
+          )}
+
+          {/* Reset */}
+          <button onClick={() => { setResult(null); setInput(""); }}
+            style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, background: "transparent", border: `1px solid ${soft}66`, color: soft, padding: "8px 16px", borderRadius: 2, cursor: "pointer" }}>
             ← new situation
           </button>
-
         </div>
       )}
 
-      <footer style={{ textAlign: "center", fontFamily: "'DM Mono', monospace", fontSize: 11, color: soft, marginTop: 40, letterSpacing: "0.1em" }}>
+      <footer style={{ textAlign: "center", fontFamily: "'DM Mono', monospace", fontSize: 10, color: soft, marginTop: 48, letterSpacing: "0.1em" }}>
         tap any French to hear it
       </footer>
 
